@@ -13,3 +13,9 @@ cargo build --release
 ```shell
 ./target/release/waddle --help
 ```
+
+## TODO
+
+- [ ] `tempdir`
+- [ ] Support `serde`
+- [ ] argument parser
