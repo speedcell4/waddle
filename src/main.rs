@@ -1,9 +1,11 @@
+use std::collections::HashMap;
+use std::env::temp_dir;
 use std::fs::{File, OpenOptions, read};
 use std::io;
 use std::io::{BufRead, BufReader, BufWriter, Error, Read, Seek, SeekFrom, Write};
 use std::mem::transmute;
 use std::panic::panic_any;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::str::from_utf8;
 
 use rand::prelude::SliceRandom;
@@ -82,28 +84,25 @@ impl CopyLine {
     }
 }
 
+fn build_offsets<'a>(paths: &Vec<&'a Path>) -> HashMap<&'a Path, PathBuf> {
+    let mut rng = thread_rng();
+
+    paths.iter().map(|&path| {
+        let mut offsets = collect_offsets(path).unwrap();
+        offsets.shuffle(&mut rng);
+
+        let offset_path = path.with_extension(".offsets").to_owned();
+        dump_offsets(&offsets, offset_path.as_path());
+
+        (path, offset_path)
+    }).collect()
+}
 
 fn main() -> Result<(), Error> {
-    let mut offsets = collect_offsets(
-        Path::new("data/example1.txt")
-    )?;
-
-
-    dump_offsets(&offsets, Path::new("data/nice.txt"))?;
-    let miao = load_offsets(Path::new("data/nice.txt"))?;
-
-    let mut reader: BufReader<File> = BufReader::new(OpenOptions::new()
-        .read(true)
-        .open("data/example1.txt")?);
-    let mut writer: BufWriter<File> = BufWriter::new(OpenOptions::new()
-        .create(true)
-        .write(true)
-
-        .open("data/nice.out.txt")?);
-
-    let mut copy_line = CopyLine::new();
-
-    copy_line.copy_line(&mut offsets, &mut reader, &mut writer)?;
+    let paths = vec![
+        Path::new("data/example1.txt"),
+    ];
+    println!("build_offsets(&paths) => {:?}", build_offsets(&paths));
 
     Ok(())
 }
