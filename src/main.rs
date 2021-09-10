@@ -1,9 +1,10 @@
-use std::fs::{File, OpenOptions};
+use std::fs::{File, OpenOptions, read};
 use std::io;
-use std::io::{Error, Read, Write};
+use std::io::{BufRead, BufReader, BufWriter, Error, Read, Seek, SeekFrom, Write};
 use std::mem::transmute;
 use std::panic::panic_any;
 use std::path::Path;
+use std::str::from_utf8;
 
 use rand::prelude::SliceRandom;
 use rand::thread_rng;
@@ -27,6 +28,7 @@ fn collect_offsets(path: &Path) -> Result<Vec<u64>, io::Error> {
 
 fn dump_offsets(offsets: &Vec<u64>, path: &Path) -> Result<(), io::Error> {
     let mut writer = OpenOptions::new()
+        .create(true)
         .write(true)
         .open(path)?;
 
@@ -56,18 +58,52 @@ fn load_offsets(path: &Path) -> Result<Vec<u64>, io::Error> {
     Ok(ret)
 }
 
+struct CopyLine {
+    buf: Vec<u8>,
+}
+
+impl CopyLine {
+    fn new() -> CopyLine {
+        CopyLine {
+            buf: Vec::new(),
+        }
+    }
+
+    fn copy_line(&mut self, offsets: &mut Vec<u64>,
+                 src: &mut BufReader<File>,
+                 tgt: &mut BufWriter<File>) -> std::io::Result<()> {
+        let offset = offsets.pop().unwrap();
+        src.seek(SeekFrom::Start(offset))?;
+
+        self.buf.clear();
+        src.read_until(b'\n', &mut self.buf)?;
+        tgt.write(self.buf.as_slice())?;
+        Ok(())
+    }
+}
+
+
 fn main() -> Result<(), Error> {
-    let offsets = collect_offsets(
+    let mut offsets = collect_offsets(
         Path::new("data/example1.txt")
     )?;
 
 
     dump_offsets(&offsets, Path::new("data/nice.txt"))?;
-
-    println!("offsets => {:?}", offsets);
-
     let miao = load_offsets(Path::new("data/nice.txt"))?;
-    println!("miao => {:?}", miao);
+
+    let mut reader: BufReader<File> = BufReader::new(OpenOptions::new()
+        .read(true)
+        .open("data/example1.txt")?);
+    let mut writer: BufWriter<File> = BufWriter::new(OpenOptions::new()
+        .create(true)
+        .write(true)
+
+        .open("data/nice.out.txt")?);
+
+    let mut copy_line = CopyLine::new();
+
+    copy_line.copy_line(&mut offsets, &mut reader, &mut writer)?;
 
     Ok(())
 }
