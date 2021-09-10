@@ -1,15 +1,13 @@
 use std::collections::HashMap;
-use std::env::temp_dir;
-use std::fs::{File, OpenOptions, read};
+use std::error::Error;
+use std::fs::{File, OpenOptions};
 use std::io;
-use std::io::{BufRead, BufReader, BufWriter, Error, Read, Seek, SeekFrom, Write};
+use std::io::{BufRead, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::mem::transmute;
-use std::panic::panic_any;
 use std::path::{Path, PathBuf};
-use std::str::from_utf8;
 
+use rand::{Rng, thread_rng};
 use rand::prelude::SliceRandom;
-use rand::thread_rng;
 
 fn collect_offsets(path: &Path) -> Result<Vec<u64>, io::Error> {
     let mut offsets: Vec<_> = File::open(path)?.bytes()
@@ -98,11 +96,45 @@ fn build_offsets<'a>(paths: &Vec<&'a Path>) -> HashMap<&'a Path, PathBuf> {
     }).collect()
 }
 
-fn main() -> Result<(), Error> {
-    let paths = vec![
-        Path::new("data/example1.txt"),
-    ];
-    println!("build_offsets(&paths) => {:?}", build_offsets(&paths));
+fn shuffle_files(map: &HashMap<&Path, PathBuf>, paths: &Vec<&Path>, size: usize) {
+    let mut rng = thread_rng();
+    let mut copy_line = CopyLine::new();
 
-    Ok(())
+    let mut iter = map.iter();
+    let mut readers: Vec<_> = (0..size).map(|_| iter.next().unwrap()).map(|(path, offset_path)| {
+        let file = OpenOptions::new().read(true).open(path).unwrap();
+        let offsets = load_offsets(offset_path.as_path()).unwrap();
+        (BufReader::new(file), offsets)
+    }).collect();
+
+    let mut writers: Vec<_> = paths.iter().map(|path| {
+        let file = OpenOptions::new().create(true).write(true).open(path).unwrap();
+        BufWriter::new(file)
+    }).collect();
+
+    while !readers.is_empty() {
+        let index1 = rng.gen_range(0..readers.len());
+        let index2 = rng.gen_range(0..writers.len());
+
+        let (reader, offsets) = readers.get_mut(index1).unwrap();
+        let writer = writers.get_mut(index2).unwrap();
+
+        copy_line.copy_line(offsets, reader, writer);
+        if offsets.len() == 0 {
+            readers.remove(index1);
+            if let Some((path, offset_path)) = iter.next() {
+                let file = OpenOptions::new().read(true).open(path).unwrap();
+                let offsets = load_offsets(offset_path.as_path()).unwrap();
+                readers.push((BufReader::new(file), offsets));
+            }
+        }
+    }
+}
+
+fn main() {
+    let path1 = vec![Path::new("data/example1.txt")];
+    let path2 = vec![Path::new("data/example1.out.txt")];
+
+    let map = build_offsets(&path1);
+    shuffle_files(&map, &path2, 1);
 }
