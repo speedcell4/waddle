@@ -13,21 +13,24 @@ use offset::{Offset, Offsets};
 
 mod offset;
 
-struct CopyLine {
+struct LineWriter {
     buf: Vec<u8>,
 }
 
-impl CopyLine {
-    fn new() -> CopyLine {
-        CopyLine {
+impl LineWriter {
+    fn new() -> LineWriter {
+        LineWriter {
             buf: Vec::new(),
         }
     }
 
-    fn copy_line(&mut self, offsets: &mut Offsets,
-                 src: &mut BufReader<File>,
-                 tgt: &mut BufWriter<File>) -> std::io::Result<()> {
-        let offset = offsets.pop().unwrap();
+    fn write_line(&mut self,
+                  offsets: &mut Offsets,
+                  src: &mut BufReader<File>,
+                  tgt: &mut BufWriter<File>) -> io::Result<()> {
+        let offset = offsets.pop()
+            .ok_or(io::Error::new(io::ErrorKind::Other, "offsets is empty"))?;
+
         src.seek(SeekFrom::Start(offset))?;
 
         self.buf.clear();
@@ -53,7 +56,7 @@ fn build_offsets<'a>(paths: &Vec<&'a Path>) -> HashMap<&'a Path, PathBuf> {
 
 fn shuffle_files(map: &HashMap<&Path, PathBuf>, paths: &Vec<&Path>, size: usize) {
     let mut rng = thread_rng();
-    let mut copy_line = CopyLine::new();
+    let mut copy_line = LineWriter::new();
 
     let mut iter = map.iter();
     let mut readers: Vec<_> = (0..size).map(|_| iter.next().unwrap()).map(|(path, offset_path)| {
@@ -74,7 +77,7 @@ fn shuffle_files(map: &HashMap<&Path, PathBuf>, paths: &Vec<&Path>, size: usize)
         let (reader, offsets) = readers.get_mut(index1).unwrap();
         let writer = writers.get_mut(index2).unwrap();
 
-        copy_line.copy_line(offsets, reader, writer);
+        copy_line.write_line(offsets, reader, writer);
         if offsets.len() == 0 {
             readers.remove(index1);
             if let Some((path, offset_path)) = iter.next() {
